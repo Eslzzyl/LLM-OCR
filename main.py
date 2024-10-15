@@ -1,6 +1,5 @@
 import asyncio
 import base64
-import io
 import logging
 import os
 import tempfile
@@ -11,7 +10,7 @@ import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
-from openai import AsyncAzureOpenAI, OpenAIError
+from openai import AsyncOpenAI, OpenAIError
 from pydantic import BaseModel, HttpUrl, ValidationError
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -24,9 +23,8 @@ load_dotenv()
 
 class Settings:
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY")
-    AZURE_OPENAI_ENDPOINT: str = os.getenv("AZURE_OPENAI_ENDPOINT")
-    OPENAI_DEPLOYMENT_ID: str = os.getenv("OPENAI_DEPLOYMENT_ID")
-    OPENAI_API_VERSION: str = os.getenv("OPENAI_API_VERSION", "gpt-4o")
+    OPENAI_BASE_URL: str = os.getenv("OPENAI_BASE_URL")
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL")
     # Default BATCH_SIZE set to 1; can be set to 10 via environment variable
     BATCH_SIZE: int = int(os.getenv("BATCH_SIZE", 1))
     MAX_CONCURRENT_OCR_REQUESTS: int = int(os.getenv("MAX_CONCURRENT_OCR_REQUESTS", 5))
@@ -38,8 +36,8 @@ class Settings:
             var
             for var in [
                 "OPENAI_API_KEY",
-                "AZURE_OPENAI_ENDPOINT",
-                "OPENAI_DEPLOYMENT_ID",
+                "OPENAI_BASE_URL",
+                "OPENAI_MODEL",
             ]
             if not getattr(cls, var)
         ]
@@ -53,10 +51,9 @@ Settings.validate()
 
 # Initialize OpenAI client
 try:
-    openai_client = AsyncAzureOpenAI(
-        azure_endpoint=Settings.AZURE_OPENAI_ENDPOINT,
-        api_version=Settings.OPENAI_API_VERSION,
+    openai_client = AsyncOpenAI(
         api_key=Settings.OPENAI_API_KEY,
+        base_url=Settings.OPENAI_BASE_URL
     )
 except Exception as e:
     raise RuntimeError(f"Failed to initialize OpenAI client: {e}")
@@ -368,10 +365,9 @@ async def retry_with_backoff(
 class OCRService:
     def __init__(self):
         try:
-            self.client = AsyncAzureOpenAI(
-                azure_endpoint=Settings.AZURE_OPENAI_ENDPOINT,
-                api_version=Settings.OPENAI_API_VERSION,
+            self.client = AsyncOpenAI(
                 api_key=Settings.OPENAI_API_KEY,
+                base_url=Settings.OPENAI_BASE_URL,
             )
         except Exception as e:
             logger.exception(f"Failed to initialize OpenAI client: {e}")
@@ -397,7 +393,7 @@ class OCRService:
                     f"Sending OCR request to OpenAI with {len(image_batch)} images."
                 )
                 response = await self.client.chat.completions.create(
-                    model=Settings.OPENAI_DEPLOYMENT_ID,
+                    model=Settings.OPENAI_MODEL,
                     messages=messages,
                     temperature=0.1,
                     max_tokens=4000,
@@ -435,7 +431,7 @@ class OCRService:
         Build the message payload for the OCR request.
 
         Args:
-            image_batch (List[Tuple[int, str]]): List of tuples containing page numbers and image URLs.
+            image_batch (List[Tuple[int, str]]): List of tuples containing page numbers and image URLs.Main
 
         Returns:
             List[dict]: The message payload.
