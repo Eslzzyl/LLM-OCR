@@ -1,7 +1,6 @@
 asyncio
 python-dotenv
 fastapi
-pydantic
 requests
 PyMuPDF
 openai
